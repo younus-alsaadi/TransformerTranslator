@@ -34,14 +34,21 @@ class TranslationDataset(Dataset):
         encoder_input_tokens = self.tokenizer_src.encode(src_text).ids
         decoder_input_tokens = self.tokenizer_tgt.encode(trg_text).ids
 
+        max_enc = self.seq_len - 2
+        max_dec = self.seq_len - 1
+
+        # Truncate if needed (instead of raising)
+        if len(encoder_input_tokens) > max_enc:
+            encoder_input_tokens = encoder_input_tokens[:max_enc]
+        if len(decoder_input_tokens) > max_dec:
+            decoder_input_tokens = decoder_input_tokens[:max_dec]
+
         # make the padding to each sentence
         encoder_num_padding_tokens= self.seq_len - len(encoder_input_tokens)-2 # We will add <s> and </s>
         # We will only add <s>, and </s> only on the label
         decoder_num_padding_tokens = self.seq_len - len(decoder_input_tokens)-1
 
-        # Make sure the number of padding tokens is not negative. If it is, the sentence is too long
-        if encoder_num_padding_tokens < 0 or decoder_num_padding_tokens < 0:
-            raise ValueError("Sentence is too long")
+
 
 
         # Add <s> and </s> token
