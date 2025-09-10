@@ -17,9 +17,13 @@ class TranslationDataset(Dataset):
         self.seq_len = seq_len
         self.dataset = dataset
 
-        self.sos_token = torch.tensor([tokenizer_tgt.token_to_id("[SOS]")], dtype=torch.int64)
-        self.eos_token = torch.tensor([tokenizer_tgt.token_to_id("[EOS]")], dtype=torch.int64)
-        self.pad_token = torch.tensor([tokenizer_tgt.token_to_id("[PAD]")], dtype=torch.int64)
+        self.sos_token = tokenizer_tgt.token_to_id("[SOS]")
+        self.eos_token = tokenizer_tgt.token_to_id("[EOS]")
+        self.pad_token = tokenizer_tgt.token_to_id("[PAD]")
+
+        # optional counters for logging
+        self.trunc_enc = 0
+        self.trunc_dec = 0
 
     def __len__(self):
         return len(self.dataset)
@@ -37,50 +41,42 @@ class TranslationDataset(Dataset):
         max_enc = self.seq_len - 2
         max_dec = self.seq_len - 1
 
-        # Truncate if needed (instead of raising)
+        # Truncate if needed
         if len(encoder_input_tokens) > max_enc:
             encoder_input_tokens = encoder_input_tokens[:max_enc]
+            if not hasattr(self, "trunc_enc"):
+                self.trunc_enc = 0
+            self.trunc_enc += 1
+
         if len(decoder_input_tokens) > max_dec:
             decoder_input_tokens = decoder_input_tokens[:max_dec]
+            if not hasattr(self, "trunc_dec"):
+                self.trunc_dec = 0
+            self.trunc_dec += 1
 
         # make the padding to each sentence
         encoder_num_padding_tokens= self.seq_len - len(encoder_input_tokens)-2 # We will add <s> and </s>
         # We will only add <s>, and </s> only on the label
         decoder_num_padding_tokens = self.seq_len - len(decoder_input_tokens)-1
 
+        encoder_input = torch.cat([
+            torch.tensor([self.sos_token], dtype=torch.int64),
+            torch.tensor(encoder_input_tokens, dtype=torch.int64),
+            torch.tensor([self.eos_token], dtype=torch.int64),
+            torch.full((encoder_num_padding_tokens,), self.pad_token, dtype=torch.int64),
+        ], dim=0)
 
+        decoder_input = torch.cat([
+            torch.tensor([self.sos_token], dtype=torch.int64),
+            torch.tensor(decoder_input_tokens, dtype=torch.int64),
+            torch.full((decoder_num_padding_tokens,), self.pad_token, dtype=torch.int64),
+        ], dim=0)
 
-
-        # Add <s> and </s> token
-        encoder_input = torch.cat(
-            [
-                self.sos_token,
-                torch.tensor(encoder_input_tokens, dtype=torch.int64),
-                self.eos_token,
-                torch.tensor([self.pad_token] * encoder_num_padding_tokens, dtype=torch.int64),
-            ],
-            dim=0,
-        )
-
-        # Add only <s> token
-        decoder_input = torch.cat(
-            [
-                self.sos_token,
-                torch.tensor(decoder_input_tokens, dtype=torch.int64),
-                torch.tensor([self.pad_token] * decoder_num_padding_tokens, dtype=torch.int64),
-            ],
-            dim=0,
-        )
-
-        # Add only </s> token
-        out_label = torch.cat(
-            [
-                torch.tensor(decoder_input_tokens, dtype=torch.int64),
-                self.eos_token,
-                torch.tensor([self.pad_token] * decoder_num_padding_tokens, dtype=torch.int64),
-            ],
-            dim=0,
-        )
+        out_label = torch.cat([
+            torch.tensor(decoder_input_tokens, dtype=torch.int64),
+            torch.tensor([self.eos_token], dtype=torch.int64),
+            torch.full((decoder_num_padding_tokens,), self.pad_token, dtype=torch.int64),
+        ], dim=0)
 
         # Double check the size of the tensors to make sure they are all seq_len long
         assert encoder_input.size(0) == self.seq_len
