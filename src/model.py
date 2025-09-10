@@ -48,7 +48,7 @@ class LayerNormalization(nn.Module):
          super().__init__()
          self.eps = eps
          self.alpha = nn.Parameter(torch.ones(features))  # alpha is a learnable parameter
-         self.bias = nn.Parameter(torch.zeros(features))  # bias is a learnable parameter
+         self.beta = nn.Parameter(torch.zeros(features))  # bias is a learnable parameter
 
      def forward(self, x: torch.Tensor) -> torch.Tensor:
          # Keep the dimension for broadcasting
@@ -88,8 +88,9 @@ class MultiHeadAttentionBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     @staticmethod
-    def attention(self, query, key, value, mask, dropout: nn.Dropout) -> torch.Tensor:
-        d_k = query.shape(-1)
+    def attention(query, key, value, mask, dropout: nn.Dropout) -> torch.Tensor:
+        # query,key,value: (B, H, T, d_k)
+        d_k = query.shape[-1]
 
         # Just apply the formula from the paper
         # (batch, h, seq_len, d_k) --> (batch, h, seq_len, seq_len)
@@ -99,7 +100,7 @@ class MultiHeadAttentionBlock(nn.Module):
             # Write a very low value (indicating -inf) to the positions where mask == 0
             attention_scores = attention_scores.masked_fill(mask == 0, -1e9)
 
-        attention_scores=attention_scores.softmax(dim=-1) # (batch, h, seq_len, dk) # Apply softmax
+        attention_scores = attention_scores.softmax(dim=-1) # (batch, h, seq_len, dk) # Apply softmax
 
         if dropout is not None:
             attention_scores = dropout(attention_scores)
@@ -109,32 +110,32 @@ class MultiHeadAttentionBlock(nn.Module):
 
 
     def forward(self, q, k, v, mask):
-            query_ = self.w_q(q)  # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
-            key_ = self.w_k(k)  # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
-            value_ = self.w_v(v)  # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
+        query_ = self.W_q(q)  # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
+        key_ = self.W_k(k)  # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
+        value_ = self.W_v(v)  # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
 
-            # (batch, seq_len, d_model) --> (batch, seq_len, h, d_k) --> (batch, h, seq_len, d_k)
-            query_ = query_.view(query_.shape[0], query_.shape[1], self.h, self.d_k).transpose(1, 2)
-            key_ = key_.view(key_.shape[0], key_.shape[1], self.h, self.d_k).transpose(1, 2)
-            value_ = value_.view(value_.shape[0], value_.shape[1], self.h, self.d_k).transpose(1, 2)
+        # (batch, seq_len, d_model) --> (batch, seq_len, h, d_k) --> (batch, h, seq_len, d_k)
+        query_ = query_.view(query_.shape[0], query_.shape[1], self.h, self.d_k).transpose(1, 2)
+        key_ = key_.view(key_.shape[0], key_.shape[1], self.h, self.d_k).transpose(1, 2)
+        value_ = value_.view(value_.shape[0], value_.shape[1], self.h, self.d_k).transpose(1, 2)
 
-            # Calculate attention
-            x, self.attention_scores = MultiHeadAttentionBlock.attention(query_, key_, value_, mask, self.dropout)
+        # Calculate attention
+        x, self.attention_scores = MultiHeadAttentionBlock.attention(query_, key_, value_, mask, self.dropout)
 
-            # Combine all the heads together
-            # (batch, h, seq_len, d_k) --> (batch, seq_len, h, d_k) --> (batch, seq_len, d_model)
-            x = x.transpose(1, 2).contiguous().view(x.shape[0], -1, self.h * self.d_k)
+        # Combine all the heads together
+        # (batch, h, seq_len, d_k) --> (batch, seq_len, h, d_k) --> (batch, seq_len, d_model)
+        x = x.transpose(1, 2).contiguous().view(x.shape[0], -1, self.h * self.d_k)
 
-            # Multiply by Wo
-            # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
-            return self.w_o(x)
+        # Multiply by Wo
+        # (batch, seq_len, d_model) --> (batch, seq_len, d_model)
+        return self.W_o(x)
 
 
 class ResidualConnectionBlock(nn.Module):
-    def __init__(self,dropout: float) -> None:
+    def __init__(self,features: int, dropout: float) -> None:
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        self.norm= LayerNormalization()
+        self.norm= LayerNormalization(features)
 
     def forward(self, x, sublayer) -> torch.Tensor:
         return x + self.dropout(sublayer(self.norm(x)))
@@ -145,10 +146,10 @@ class EncoderBlock(nn.Module):
         super().__init__()
         self.self_attention_block = self_attention_block
         self.feed_forward_block = feed_forward_block
-        self.residual_connection = nn.ModuleList([ResidualConnectionBlock(dropout), ResidualConnectionBlock(dropout)])
+        self.residual_connection = nn.ModuleList([ResidualConnectionBlock(features,dropout), ResidualConnectionBlock(features,dropout)])
 
     def forward(self, x, src_mask):
-        x= self.residual_connection[0](x,lambda x:self.self_attention_block(x,x,x,src_mask))
+        x = self.residual_connection[0](x, lambda x:self.self_attention_block(x,x,x,src_mask))
         x = self.residual_connection[1](x,self.feed_forward_block)
         return x
 
@@ -157,7 +158,7 @@ class Encoder(nn.Module):
     def __init__(self, features: int, layers: nn.ModuleList) -> None:
         super().__init__()
         self.layers = nn.ModuleList(layers)
-        self.norm = LayerNormalization()
+        self.norm = LayerNormalization(features)
 
     def forward(self, x, mask) -> torch.Tensor:
         for layer in self.layers:

@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 def get_all_sentences(dataset, language):
     for item in dataset:
-        yield item[language][language]
+        yield item['translation'][language]
 
 def get_or_build_tokenizer(config, dataset, language):
     tokenizer_path = Path(config["tokenizer_file"].format(language))
@@ -41,7 +41,7 @@ def get_or_build_tokenizer(config, dataset, language):
 
 def get_dataset(config):
 
-    dataset_raw = load_dataset(f"{config['opus_books']}",f"{config['lang_src']}-{config['lang_tgt']}", split='train')
+    dataset_raw = load_dataset(f"{config['datasource']}",f"{config['lang_src']}-{config['lang_tgt']}", split='train')
 
     # Build tokenizers
     tokenizer_src = get_or_build_tokenizer(config, dataset_raw, config['lang_src'])
@@ -78,7 +78,7 @@ def get_dataset(config):
 
 def get_model(config, vocab_src_size, vocab_tgt_size):
     """d_model size of Embedding"""
-    model = build_transformer(vocab_src_size,vocab_tgt_size, config['lang_src'], config['lang_tgt'], d_model=config['d_model'])
+    model = build_transformer(vocab_src_size,vocab_tgt_size, config['seq_len'], config['seq_len'], d_model=config['d_model'])
     return model
 
 def train_model(config):
@@ -91,7 +91,13 @@ def train_model(config):
     Path(config['model_folder']).mkdir(parents=True, exist_ok=True)
 
     train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt = get_dataset(config)
+    print("Data building done:")
+    print("=" * 20)
+
     model=get_model(config,tokenizer_src.get_vocab_size(),tokenizer_tgt.get_vocab_size()).to(device)
+
+    print("\nmodel building done:")
+    print("=" * 20)
 
     optimizer=torch.optim.Adam(model.parameters(), lr=config['lr'], eps=1e-9)
 
@@ -110,15 +116,19 @@ def train_model(config):
 
     loss_fn= nn.CrossEntropyLoss(ignore_index=tokenizer_src.token_to_id('[PAD]'), label_smoothing=0.1).to(device)
 
-    # define our custom x axis metric
-    wandb.define_metric()
+    print("loss and optimizer building done:")
+    print("=" * 20)
 
-    # define which metrics will be plotted against it
+    # # define our custom x axis metric
+    # wandb.define_metric()
+    #
+    # # define which metrics will be plotted against it
+    #
+    # wandb.define_metric("validation/*", step_metric="global_step")
+    # wandb.define_metric("train/*", step_metric="global_step")
 
-    wandb.define_metric("validation/*", step_metric="global_step")
-    wandb.define_metric("train/*", step_metric="global_step")
-
-
+    print("training will start:")
+    print("=" * 20)
     for epoch in range(initial_epoch, config['num_epochs']):
         torch.cuda.empty_cache()
         model.train()
@@ -145,8 +155,8 @@ def train_model(config):
             loss = loss_fn(proj_output.view(-1, tokenizer_tgt.get_vocab_size()), out_put_target.view(-1))
             batch_itreator.set_postfix({"loss": f"{loss.item():6.3f}"})
 
-            # Log the loss
-            wandb.log({'train/loss': loss.item(), 'global_step': global_step})
+            # # Log the loss
+            # wandb.log({'train/loss': loss.item(), 'global_step': global_step})
 
             # Backpropagate the loss
             loss.backward()
@@ -224,17 +234,17 @@ def run_validation(model,validation_dataset,tokenizer_src, tokenizer_tgt, max_le
         # Compute the char error rate
         metric = torchmetrics.CharErrorRate()
         cer = metric(predicted, expected)
-        wandb.log({'validation/cer': cer, 'global_step': global_step_from_training})
+        #wandb.log({'validation/cer': cer, 'global_step': global_step_from_training})
 
         # Compute the word error rate
         metric = torchmetrics.WordErrorRate()
         wer = metric(predicted, expected)
-        wandb.log({'validation/wer': wer, 'global_step': global_step_from_training})
+        # wandb.log({'validation/wer': wer, 'global_step': global_step_from_training})
 
         # Compute the BLEU metric
         metric = torchmetrics.BLEUScore()
         bleu = metric(predicted, expected)
-        wandb.log({'validation/BLEU': bleu, 'global_step': global_step_from_training})
+        # wandb.log({'validation/BLEU': bleu, 'global_step': global_step_from_training})
 
 
 # calculate the encoder only one and use only one for the val (always pick the most likely next token.)
@@ -280,11 +290,13 @@ if __name__ == '__main__':
     config['num_epochs'] = 30
     config['resume'] = None
 
-    wandb.init(
+    train_model(config)
 
-        project=config['project'],
-        config=config,
-    )
+    # wandb.init(
+    #
+    #     project=config['project'],
+    #     config=config,
+    # )
 
 
 
