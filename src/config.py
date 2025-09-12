@@ -5,6 +5,7 @@ def get_config():
         "project":"Translation_EN-DE_Transformer",
         "batch_size": 8,
         "num_epochs": 20,
+        'max_train_batches':-1,
         "lr": 10**-4,
         "seq_len": 350,
         "d_model": 512,

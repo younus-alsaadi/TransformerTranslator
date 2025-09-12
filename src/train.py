@@ -133,9 +133,16 @@ def train_model(config):
         torch.cuda.empty_cache()
         model.train()
 
-        batch_itreator=tqdm(train_dataloader, desc=f"Processing Epoch {epoch:02d}")
+        max_batches=config['max_train_batches']
 
-        for batch in batch_itreator:
+        use_all_batches=(max_batches==-1)
+
+        total_for_bar = len(train_dataloader) if use_all_batches else min(max_batches, len(train_dataloader))
+
+        batch_itreator=tqdm(train_dataloader, desc=f"Processing Epoch {epoch:02d}",total=total_for_bar)
+
+
+        for i, batch in enumerate(batch_itreator, start=1):
             encoder_input = batch['encoder_input'].to(device)  # (b, seq_len)
             decoder_input = batch['decoder_input'].to(device)  # (B, seq_len)
             encoder_mask = batch['encoder_mask'].to(device)  # (B, 1, 1, seq_len)
@@ -166,6 +173,9 @@ def train_model(config):
             optimizer.zero_grad(set_to_none=True)
 
             global_step += 1
+
+            if not use_all_batches and i >= max_batches:
+                break
 
         model_filename = get_weights_file_path(config, f"{epoch:02d}")
 
@@ -259,36 +269,35 @@ def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_
     # Initialize decoder input with SOS
     decoder_input= torch.empty(1,1).fill_(sos_idx).type_as(source).to(device)
 
-    while True:
-        if decoder_input.size(0) == max_len_input:
-            break
-
-        # Build causal mask
+    # keep generating while current length < max_len_input
+    while decoder_input.size(1) < max_len_input:
+        # Build causal mask for current length
         decoder_mask = causal_mask(decoder_input.size(1)).type_as(source_mask).to(device)
 
-        output=model.decode(encoder_output,source_mask,decoder_input, decoder_mask)
+        output = model.decode(encoder_output, source_mask, decoder_input, decoder_mask)
 
-        # get next token, project only last token
-        probability_next_output = model.project(output[:,-1])
-        _,next_word=torch.max(probability_next_output,dim=1)
+        # project only the last time step
+        logits_last = model.project(output[:, -1])
+        _, next_word = torch.max(logits_last, dim=1)
 
-        #Append next token to decoder input
-        decoder_input = torch.cat(
-            [decoder_input, torch.empty(1, 1).type_as(source).fill_(next_word.item()).to(device)], dim=1
-        )
-
-        if next_word == eos_idx:
+        # stop if EOS predicted (don’t append EOS beyond max_len)
+        if next_word.item() == eos_idx:
             break
 
+        # append next token
+        decoder_input = torch.cat(
+            [decoder_input, torch.empty(1, 1).type_as(source).fill_(next_word.item()).to(device)],
+            dim=1
+        )
 
-
-    return decoder_input.squeeze(0) # return[33,32,13,241]
+    return decoder_input.squeeze(0)
 
 
 if __name__ == '__main__':
     config = get_config()
     config['num_epochs'] = 30
     config['resume'] = None
+    config['max_train_batches'] = 5
 
     train_model(config)
 
