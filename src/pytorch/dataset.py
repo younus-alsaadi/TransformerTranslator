@@ -1,7 +1,7 @@
 
-import torch.nn as nn
 from torch.utils.data import Dataset
 import torch
+
 
 class TranslationDataset(Dataset):
     def __init__(self, dataset ,tokenizer_src,tokenizer_tgt, src_lang, trg_lang, seq_len):
@@ -100,6 +100,7 @@ class TranslationDataset(Dataset):
 def causal_mask(size):
     mask = torch.triu(torch.ones((1, size, size)), diagonal=1).type(torch.int)
     return mask == 0
+
 
 
 

@@ -3,6 +3,7 @@ from pathlib import Path
 def get_config():
     return {
         "project":"Translation_EN-DE_Transformer",
+        "lib": "torch", # pytorch or tf
         "batch_size": 8,
         "num_epochs": 20,
         'max_train_batches':-1,
@@ -14,7 +15,7 @@ def get_config():
         "lang_tgt": "en",
         "model_folder": "weights",
         "model_basename": "tmodel_",
-        "resume": "latest",
+        "resume": None,
         "tokenizer_file": "tokenizer_{0}.json",
         "experiment_name": "runs/tmodel"
     }
