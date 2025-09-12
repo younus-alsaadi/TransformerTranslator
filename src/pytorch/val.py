@@ -22,6 +22,7 @@ def run_validation(model,validation_dataset,tokenizer_src, tokenizer_tgt, max_le
 
     with torch.no_grad():
         for batch in validation_dataset:
+            count += 1
             encoder_input = batch["encoder_input"].to(device)  # (b, seq_len)
             encoder_mask = batch["encoder_mask"].to(device)  # (b, 1, 1, seq_len)
 
@@ -30,8 +31,6 @@ def run_validation(model,validation_dataset,tokenizer_src, tokenizer_tgt, max_le
                 0) == 1, "Batch size must be 1 for validation"
 
             model_out = greedy_decode(model, encoder_input, encoder_mask, tokenizer_src, tokenizer_tgt, max_len_input, device)
-
-
             source_text = batch["src_text"][0]
             target_text = batch["tgt_text"][0]
 
@@ -60,16 +59,22 @@ def run_validation(model,validation_dataset,tokenizer_src, tokenizer_tgt, max_le
         metric = torchmetrics.CharErrorRate()
         cer = metric(predicted, expected)
         #wandb.log({'validation/cer': cer, 'global_step': global_step_from_training})
+        print("="*20)
+        print(f"cer: {cer}")
 
         # Compute the word error rate
         metric = torchmetrics.WordErrorRate()
         wer = metric(predicted, expected)
         # wandb.log({'validation/wer': wer, 'global_step': global_step_from_training})
+        print(f"wer: {wer}")
 
         # Compute the BLEU metric
         metric = torchmetrics.BLEUScore()
         bleu = metric(predicted, expected)
         # wandb.log({'validation/BLEU': bleu, 'global_step': global_step_from_training})
+        print(f"bleu: {bleu}")
+        print("="*20)
+
 
 # calculate the encoder only one and use only one for the val (always pick the most likely next token.)
 def greedy_decode(model, source, source_mask, tokenizer_src, tokenizer_tgt, max_len_input, device ):

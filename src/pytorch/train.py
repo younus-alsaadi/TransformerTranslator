@@ -6,7 +6,7 @@ from tokenizers.trainers import  WordLevelTrainer
 from tokenizers.pre_tokenizers import Whitespace
 from pathlib import Path
 from torch.utils.data import random_split, DataLoader
-from src.config import get_weights_file_path, get_config
+from src.config import get_weights_file_path, get_config,latest_weights_file_path
 from src.pytorch.dataset import TranslationDataset, causal_mask
 from src.pytorch.model import build_transformer
 import torch.nn as nn
@@ -67,6 +67,9 @@ def get_dataset(config):
     train_dataloader = DataLoader(train_ds, batch_size=config['batch_size'], shuffle=True)
     val_dataloader = DataLoader(val_ds, batch_size=1, shuffle=True)
 
+    print(f'len of train data loder: {len(train_dataloader)}')
+    print(f'len of val data loder: {len(val_dataloader)}')
+
     return train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt
 
 def get_model(config, vocab_src_size, vocab_tgt_size):
@@ -83,7 +86,8 @@ def train_model(config):
     print("="*20)
 
     # Make sure the weights folder exists
-    Path(config['model_folder']).mkdir(parents=True, exist_ok=True)
+    Path(f"pytorch/{config['model_folder']}").mkdir(parents=True, exist_ok=True)
+    Path(f"pytorch/{config['datasource']}_{config['model_folder']}").mkdir(parents=True, exist_ok=True)
 
     train_dataloader, val_dataloader, tokenizer_src, tokenizer_tgt = get_dataset(config)
     print("Data building done:")
@@ -98,16 +102,19 @@ def train_model(config):
 
     initial_epoch=0
     global_step=0
-    if config['resume']:
-        model_file_name=get_weights_file_path(config, config['resume'])
-        print(f"Loading weights from pretrained {model_file_name}")
-        print("="*20)
-        state_dict = torch.load(model_file_name)
-        model.load_state_dict(state_dict['model_state_dict'])
-        initial_epoch=state_dict['epoch']+1
-        optimizer.load_state_dict(state_dict['optimizer_state_dict'])
-        global_step=state_dict['global_step']
-        del state_dict
+    preload=config['resume']
+
+    model_filename = latest_weights_file_path(config) if preload == 'latest' else get_weights_file_path(config,
+                                                                                                        preload) if preload else None
+    if model_filename:
+        print(f'Preloading model {model_filename}')
+        state = torch.load(model_filename)
+        model.load_state_dict(state['model_state_dict'])
+        initial_epoch = state['epoch'] + 1
+        optimizer.load_state_dict(state['optimizer_state_dict'])
+        global_step = state['global_step']
+    else:
+        print('No model to preload, starting from scratch')
 
     loss_fn= nn.CrossEntropyLoss(ignore_index=tokenizer_src.token_to_id('[PAD]'), label_smoothing=0.1).to(device)
 
@@ -172,11 +179,11 @@ def train_model(config):
             if not use_all_batches and i >= max_batches:
                 break
 
-        model_filename = get_weights_file_path(config, f"{epoch:02d}")
+        model_filename = get_weights_file_path(config,"pytorch", f"{epoch:02d}")
 
         # Run validation at the end of every epoch
         run_validation(model, val_dataloader, tokenizer_src, tokenizer_tgt, config['seq_len'], device,
-                       lambda msg: batch_itreator.write(msg), global_step)
+                       lambda msg: batch_itreator.write(msg), global_step,1)
 
 
 
