@@ -6,7 +6,7 @@ def get_config():
         "lib": "torch", # pytorch or tf
         "batch_size": 8,
         "num_epochs": 20,
-        'max_train_batches':-1,
+        'max_train_batches':5, #-1 use all of the batche size
         "lr": 10**-4,
         "seq_len": 350,
         "d_model": 512,

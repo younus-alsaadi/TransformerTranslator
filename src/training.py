@@ -1,6 +1,6 @@
-from pytorch.train import train_model as train_model_pytorch
-from tf.train import train_model as train_model_tf
-from config import get_config
+from src.pytorch.train import train_model as train_model_pytorch
+from src.tf.train import train_model as train_model_tf
+from src.config import get_config
 
 def do_training(cfg: dict):
     lib = cfg.get("lib", "").lower()
