@@ -224,7 +224,10 @@ def run_validation(model,validation_dataset,tokenizer_src, tokenizer_tgt, max_le
             target_text = batch["tgt_text"][0]
 
             # to get the text from the model_out we use tokenizer_tgt
-            model_out_text = tokenizer_tgt.decode(model_out.detach().cpu().numpy())
+
+            # convert to plain Python list and skip special tokens for cleaner text
+            ids = model_out.detach().cpu().tolist()
+            model_out_text = tokenizer_tgt.decode(ids, skip_special_tokens=True)
 
             source_texts.append(source_text)
             expected.append(target_text)
